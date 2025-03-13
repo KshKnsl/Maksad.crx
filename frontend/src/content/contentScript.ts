@@ -55,6 +55,12 @@ const hideDistractingElements = () => {
       (shortsSidebar as HTMLElement).style.display = 'none';
     }
 
+    // Hide statement banner
+    const statementBanner = document.querySelectorAll('ytd-statement-banner-renderer');
+    statementBanner.forEach((banner: Element) => {
+      (banner as HTMLElement).style.display = 'none';
+    });
+
     // Hide Shorts from main feed
     const shortsVideos = document.querySelectorAll('ytd-rich-item-renderer');
     shortsVideos.forEach((video: Element) => {

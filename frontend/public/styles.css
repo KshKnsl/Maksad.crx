@@ -1,5 +1,6 @@
 /* Hide distracting elements with animation */
-[data-maksad-hidden="true"] {
+[data-maksad-hidden="true"],
+ytd-statement-banner-renderer {
   opacity: 0 !important;
   height: 0 !important;
   margin: 0 !important;
@@ -26,6 +27,7 @@ body.focus-mode #comments,
 body.focus-mode ytd-watch-next-secondary-results-renderer,
 body.focus-mode ytd-promoted-video-renderer,
 body.focus-mode ytd-reel-shelf-renderer,
+body.focus-mode ytd-statement-banner-renderer,
 body.focus-mode .ytp-ce-element,
 body.focus-mode ytd-rich-section-renderer,
 body.focus-mode ytd-horizontal-card-list-renderer:empty,
