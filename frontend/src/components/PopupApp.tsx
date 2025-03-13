@@ -20,14 +20,31 @@ declare global {
   }
 }
 
+interface MessageResponse {
+  success: boolean;
+  error?: string;
+}
+
 const PopupApp: React.FC = () => {
   const [maksad, setMaksad] = useState<string>('');
   const [isListening, setIsListening] = useState<boolean>(false);
   const [status, setStatus] = useState<string>('Enter your maksad (aim)');
   const [focusMode, setFocusMode] = useState<boolean>(false);
 
-  // Load saved maksad when popup opens
+  // Check if current tab is supported
   useEffect(() => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const currentTab = tabs[0];
+      if (currentTab?.url) {
+        const url = new URL(currentTab.url);
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+          setStatus('Extension not supported on this page');
+          return;
+        }
+      }
+    });
+
+    // Load saved maksad
     chrome.storage.local.get(['maksad', 'focusMode'], (result) => {
       if (result.maksad) {
         setMaksad(result.maksad);
@@ -75,37 +92,59 @@ const PopupApp: React.FC = () => {
     recognition.start();
   };
 
-  const applyContentFilter = () => {
-    // Store maksad in chrome storage
-    chrome.storage.local.set({ maksad }, () => {
-      // Send message to content script to update filters
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const activeTab = tabs[0];
-        if (activeTab?.id) {
-          chrome.tabs.sendMessage(activeTab.id, { 
-            type: 'UPDATE_MAKSAD',
-            maksad 
-          });
-        }
+  const applyContentFilter = async () => {
+    try {
+      // Store maksad in chrome storage
+      await new Promise<void>((resolve) => {
+        chrome.storage.local.set({ maksad }, resolve);
       });
-      setStatus('Filter applied!');
-    });
+
+      // Send message to background script
+      const response = await new Promise<MessageResponse>((resolve) => {
+        chrome.runtime.sendMessage({ 
+          type: 'UPDATE_MAKSAD',
+          maksad 
+        }, resolve);
+      });
+
+      if (response?.success) {
+        setStatus('Filter applied!');
+      } else {
+        setStatus(response?.error || 'Error applying filter. Please refresh the page and try again.');
+      }
+    } catch (err) {
+      console.error('Error:', err);
+      setStatus('Error applying filter. Please refresh the page and try again.');
+    }
   };
 
-  const toggleFocusMode = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const toggleFocusMode = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const newFocusMode = event.target.checked;
     setFocusMode(newFocusMode);
-    chrome.storage.local.set({ focusMode: newFocusMode }, () => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const activeTab = tabs[0];
-        if (activeTab?.id) {
-          chrome.tabs.sendMessage(activeTab.id, { 
-            type: 'TOGGLE_FOCUS_MODE',
-            enabled: newFocusMode 
-          });
-        }
+    
+    try {
+      // Store focus mode in chrome storage
+      await new Promise<void>((resolve) => {
+        chrome.storage.local.set({ focusMode: newFocusMode }, resolve);
       });
-    });
+
+      // Send message to background script
+      const response = await new Promise<MessageResponse>((resolve) => {
+        chrome.runtime.sendMessage({ 
+          type: 'TOGGLE_FOCUS_MODE',
+          enabled: newFocusMode 
+        }, resolve);
+      });
+
+      if (!response?.success) {
+        setStatus(response?.error || 'Error toggling focus mode. Please refresh the page and try again.');
+        setFocusMode(!newFocusMode); // Revert the switch
+      }
+    } catch (err) {
+      console.error('Error:', err);
+      setStatus('Error toggling focus mode. Please refresh the page and try again.');
+      setFocusMode(!newFocusMode); // Revert the switch
+    }
   };
 
   return (

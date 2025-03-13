@@ -20,12 +20,37 @@ body.focus-mode {
   filter: grayscale(30%) !important;
 }
 
+/* Hide distracting elements in focus mode */
 body.focus-mode #secondary,
 body.focus-mode #comments,
 body.focus-mode ytd-watch-next-secondary-results-renderer,
 body.focus-mode ytd-promoted-video-renderer,
-body.focus-mode .ytp-ce-element {
+body.focus-mode ytd-reel-shelf-renderer,
+body.focus-mode .ytp-ce-element,
+body.focus-mode ytd-rich-section-renderer,
+body.focus-mode ytd-horizontal-card-list-renderer:empty,
+body.focus-mode ytd-item-section-renderer:empty,
+body.focus-mode ytd-shelf-renderer:empty,
+body.focus-mode .ytd-rich-section-renderer:empty,
+body.focus-mode ytd-video-renderer:empty,
+body.focus-mode ytd-rich-grid-row:empty,
+body.focus-mode ytd-rich-shelf-renderer:empty {
   display: none !important;
+}
+
+/* Clean up empty spaces */
+ytd-horizontal-card-list-renderer:empty,
+ytd-item-section-renderer:empty,
+ytd-shelf-renderer:empty,
+.ytd-rich-section-renderer:empty,
+ytd-video-renderer:empty,
+ytd-rich-grid-row:empty,
+ytd-rich-shelf-renderer:empty {
+  margin: 0 !important;
+  padding: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
 }
 
 /* Animations */

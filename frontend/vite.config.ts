@@ -36,11 +36,18 @@ export default defineConfig({
     rollupOptions: {
       input: {
         popup: resolve(__dirname, 'index.html'),
-        contentScript: resolve(__dirname, 'src/content/contentScript.ts')
+        contentScript: resolve(__dirname, 'src/content/contentScript.ts'),
+        background: resolve(__dirname, 'src/background/background.ts')
       },
       output: {
         entryFileNames: (chunkInfo) => {
-          return chunkInfo.name === 'contentScript' ? '[name].js' : 'assets/[name]-[hash].js'
+          if (chunkInfo.name === 'contentScript') {
+            return 'contentScript.js'
+          }
+          if (chunkInfo.name === 'background') {
+            return 'background.js'
+          }
+          return '[name].js'
         },
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash].[ext]'
@@ -49,6 +56,12 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: false,
-    minify: false
+    minify: false,
+    assetsDir: 'assets'
   },
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, 'src')
+    }
+  }
 })

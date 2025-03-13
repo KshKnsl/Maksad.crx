@@ -70,14 +70,42 @@ const hideDistractingElements = () => {
       (video as HTMLElement).style.display = 'none';
     });
 
+    // Hide reels shelf
+    const reelsShelf = document.querySelectorAll('ytd-reel-shelf-renderer');
+    reelsShelf.forEach((shelf: Element) => {
+      (shelf as HTMLElement).style.display = 'none';
+    });
+
+    // Hide empty sections and dividers
+    const emptyElements = document.querySelectorAll(`
+      ytd-horizontal-card-list-renderer:empty,
+      ytd-item-section-renderer:empty,
+      ytd-shelf-renderer:empty,
+      .ytd-rich-section-renderer:empty,
+      ytd-video-renderer:empty,
+      ytd-rich-grid-row:empty,
+      ytd-rich-shelf-renderer:empty
+    `);
+    emptyElements.forEach((element: Element) => {
+      (element as HTMLElement).style.display = 'none';
+    });
+
     // Filter regular videos based on maksad
-    const videoTitles = document.querySelectorAll('ytd-video-renderer');
+    const videoTitles = document.querySelectorAll('ytd-video-renderer, ytd-rich-item-renderer');
     videoTitles.forEach((video: Element) => {
-      const titleElement = video.querySelector('#video-title');
+      const titleElement = video.querySelector('#video-title, .title');
       if (titleElement) {
         const title = titleElement.textContent || '';
         if (!containsMaksad(title)) {
           (video as HTMLElement).style.display = 'none';
+          // Also hide the parent shelf if all its videos are hidden
+          const parentShelf = video.closest('ytd-shelf-renderer, ytd-rich-shelf-renderer');
+          if (parentShelf) {
+            const visibleVideos = parentShelf.querySelectorAll('ytd-video-renderer[style*="display: block"], ytd-rich-item-renderer[style*="display: block"]');
+            if (visibleVideos.length === 0) {
+              (parentShelf as HTMLElement).style.display = 'none';
+            }
+          }
         }
       }
     });
