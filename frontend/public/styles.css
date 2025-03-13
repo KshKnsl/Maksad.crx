@@ -1,0 +1,66 @@
+/* Hide distracting elements with animation */
+[data-maksad-hidden="true"] {
+  opacity: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  transition: all 0.3s ease-out !important;
+}
+
+/* Style for filtered content */
+[data-maksad-filtered="true"] {
+  opacity: 0.5 !important;
+  filter: grayscale(100%) !important;
+  pointer-events: none !important;
+}
+
+/* Focus mode styles */
+body.focus-mode {
+  filter: grayscale(30%) !important;
+}
+
+body.focus-mode #secondary,
+body.focus-mode #comments,
+body.focus-mode ytd-watch-next-secondary-results-renderer,
+body.focus-mode ytd-promoted-video-renderer,
+body.focus-mode .ytp-ce-element {
+  display: none !important;
+}
+
+/* Animations */
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Focus mode button hover effect */
+#focus-mode-btn {
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+#focus-mode-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+}
+
+/* Maksad reminder tooltip */
+.maksad-reminder {
+  animation: slideIn 0.3s ease-out;
+  transition: opacity 0.3s ease-out;
+} 
