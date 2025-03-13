@@ -1,23 +1,12 @@
-import { ThemeProvider, createTheme } from '@mui/material';
+import React from 'react';
 import PopupApp from './components/PopupApp';
 
-const theme = createTheme({
-  palette: {
-    primary: {
-      main: '#1976d2',
-    },
-    secondary: {
-      main: '#dc004e',
-    },
-  },
-});
-
-function App() {
+const App: React.FC = () => {
   return (
-    <ThemeProvider theme={theme}>
+    <div className="min-h-screen bg-background">
       <PopupApp />
-    </ThemeProvider>
+    </div>
   );
-}
+};
 
 export default App;
