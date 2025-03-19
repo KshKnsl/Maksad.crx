@@ -1,16 +1,25 @@
 interface Message {
   type: string;
   maksad?: string;
+  enabled?: boolean;
 }
 
 let currentMaksad = '';
+let focusMode = false;
 
-// Load maksad from storage when content script initializes
-chrome.storage.local.get(['maksad'], (result) => {
+// Load maksad and focus mode from storage when content script initializes
+chrome.storage.local.get(['maksad', 'focusMode'], (result) => {
+  console.log("Loading from storage:", result);
   if (result.maksad) {
     currentMaksad = result.maksad;
-    hideDistractingElements();
   }
+  
+  if (result.focusMode) {
+    focusMode = result.focusMode;
+    toggleFocusMode(focusMode);
+  }
+  
+  hideDistractingElements();
 });
 
 // Function to check if text contains maksad
@@ -153,16 +162,119 @@ const hideDistractingElements = () => {
   });
 };
 
+// Function to remove distracting elements filter
+const removeDistractingElementsFilter = () => {
+  // Show YouTube Shorts
+  if (window.location.hostname.includes('youtube.com')) {
+    // Show Shorts from sidebar
+    const shortsSidebar = document.querySelector('ytd-guide-section-renderer a[title="Shorts"]');
+    if (shortsSidebar) {
+      (shortsSidebar as HTMLElement).style.display = '';
+    }
+
+    // Show statement banner
+    const statementBanner = document.querySelectorAll('ytd-statement-banner-renderer');
+    statementBanner.forEach((banner: Element) => {
+      (banner as HTMLElement).style.display = '';
+    });
+
+    // Show Shorts from main feed
+    const shortsVideos = document.querySelectorAll('ytd-rich-item-renderer');
+    shortsVideos.forEach((video: Element) => {
+      const link = video.querySelector('a#thumbnail[href*="shorts"]');
+      if (link) {
+        (video as HTMLElement).style.display = '';
+      }
+    });
+
+    // Show promoted videos
+    const promotedVideos = document.querySelectorAll('ytd-promoted-video-renderer');
+    promotedVideos.forEach((video: Element) => {
+      (video as HTMLElement).style.display = '';
+    });
+
+    // Show reels shelf
+    const reelsShelf = document.querySelectorAll('ytd-reel-shelf-renderer');
+    reelsShelf.forEach((shelf: Element) => {
+      (shelf as HTMLElement).style.display = '';
+    });
+
+    // Show empty sections and dividers
+    const emptyElements = document.querySelectorAll(`
+      ytd-horizontal-card-list-renderer:empty,
+      ytd-item-section-renderer:empty,
+      ytd-shelf-renderer:empty,
+      .ytd-rich-section-renderer:empty,
+      ytd-video-renderer:empty,
+      ytd-rich-grid-row:empty,
+      ytd-rich-shelf-renderer:empty
+    `);
+    emptyElements.forEach((element: Element) => {
+      (element as HTMLElement).style.display = '';
+    });
+
+    // Show regular videos
+    const videoTitles = document.querySelectorAll('ytd-video-renderer, ytd-rich-item-renderer');
+    videoTitles.forEach((video: Element) => {
+      (video as HTMLElement).style.display = '';
+    });
+  }
+
+  // Show social media feed items
+  const feedItems = document.querySelectorAll('article, [role="article"], .post, .tweet');
+  feedItems.forEach((item: Element) => {
+    (item as HTMLElement).style.display = '';
+  });
+};
+
+// Function to toggle focus mode
+function toggleFocusMode(enabled: boolean) {
+  console.log("Content script: toggling focus mode to", enabled);
+  focusMode = enabled;
+  document.body.classList.toggle('focus-mode', enabled);
+  
+  if (enabled && currentMaksad) {
+    showMaksadReminder();
+  }
+}
+
 // Listen for messages from popup
-chrome.runtime.onMessage.addListener((message: Message) => {
+chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
+  console.log("Content script received message:", message);
+  
   if (message.type === 'UPDATE_MAKSAD' && message.maksad) {
     currentMaksad = message.maksad;
     // Store maksad in chrome storage
     chrome.storage.local.set({ maksad: message.maksad }, () => {
       hideDistractingElements();
       showMaksadReminder();
+      sendResponse({ success: true });
     });
+    return true; // Keep message channel open for async response
+  } 
+  else if (message.type === 'REMOVE_MAKSAD') {
+    currentMaksad = '';
+    // Remove maksad from chrome storage
+    chrome.storage.local.remove('maksad', () => {
+      removeDistractingElementsFilter();
+      sendResponse({ success: true });
+    });
+    return true; // Keep message channel open for async response
+  } 
+  else if (message.type === 'TOGGLE_FOCUS_MODE') {
+    try {
+      toggleFocusMode(!!message.enabled);
+      sendResponse({ success: true });
+    } catch (error) {
+      console.error("Error toggling focus mode:", error);
+      sendResponse({ success: false, error: String(error) });
+    }
+    return true; // Keep message channel open for async response
   }
+  
+  // Default response if message type is not recognized
+  sendResponse({ success: false, error: 'Unknown message type' });
+  return false;
 });
 
 // Run initial cleanup
@@ -170,11 +282,13 @@ hideDistractingElements();
 
 // Create observer to handle dynamically loaded content
 const observer = new MutationObserver(() => {
-  hideDistractingElements();
+  if (currentMaksad) {
+    hideDistractingElements();
+  }
 });
 
 // Start observing
 observer.observe(document.body, {
   childList: true,
   subtree: true
-}); 
+});

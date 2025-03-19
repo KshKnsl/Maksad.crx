@@ -19,6 +19,7 @@ ytd-statement-banner-renderer {
 /* Focus mode styles */
 body.focus-mode {
   filter: grayscale(30%) !important;
+  transition: filter 0.3s ease-out !important;
 }
 
 /* Hide distracting elements in focus mode */
@@ -90,4 +91,4 @@ ytd-rich-shelf-renderer:empty {
 .maksad-reminder {
   animation: slideIn 0.3s ease-out;
   transition: opacity 0.3s ease-out;
-} 
+}

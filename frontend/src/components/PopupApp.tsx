@@ -1,14 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, Target, Ban, CheckCircle2, AlertCircle } from 'lucide-react';
-import { Button } from './ui/button';
+import { Target, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Input } from './ui/input';
-import { Switch } from './ui/switch';
+import { Button } from './ui/button'; // Add this import
 import { cn } from '../lib/utils';
 
 declare global {
   interface Window {
-    SpeechRecognition: new () => SpeechRecognition;
-    webkitSpeechRecognition: new () => SpeechRecognition;
   }
 }
 
@@ -19,7 +16,6 @@ interface MessageResponse {
 
 const PopupApp: React.FC = () => {
   const [maksad, setMaksad] = useState<string>('');
-  const [isListening, setIsListening] = useState<boolean>(false);
   const [status, setStatus] = useState<string>('Enter your maksad (aim)');
   const [focusMode, setFocusMode] = useState<boolean>(false);
   const [showStatus, setShowStatus] = useState<boolean>(false);
@@ -59,46 +55,6 @@ const PopupApp: React.FC = () => {
     setShowStatus(false);
   };
 
-  const startListening = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setStatus('Speech Recognition not supported!');
-      setStatusType('error');
-      setShowStatus(true);
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
-    recognition.interimResults = false;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-      setStatus('Listening...');
-      setStatusType('info');
-      setShowStatus(true);
-    };
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const transcript = event.results[0][0].transcript;
-      setMaksad(transcript);
-      setIsListening(false);
-      setStatus('Maksad updated!');
-      setStatusType('success');
-      setShowStatus(true);
-    };
-
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      console.error('Speech recognition error:', event.error);
-      setStatus(`Error: ${event.error}`);
-      setStatusType('error');
-      setShowStatus(true);
-      setIsListening(false);
-    };
-
-    recognition.start();
-  };
-
   const applyContentFilter = async () => {
     try {
       // Store maksad in chrome storage
@@ -130,39 +86,92 @@ const PopupApp: React.FC = () => {
     }
   };
 
-  const toggleFocusMode = async (checked: boolean) => {
-    setFocusMode(checked);
-    
+  const removeContentFilter = async () => {
     try {
-      // Store focus mode in chrome storage
+      // Remove maksad from chrome storage
       await new Promise<void>((resolve) => {
-        chrome.storage.local.set({ focusMode: checked }, resolve);
+        chrome.storage.local.remove('maksad', resolve);
       });
 
       // Send message to background script
       const response = await new Promise<MessageResponse>((resolve) => {
         chrome.runtime.sendMessage({ 
-          type: 'TOGGLE_FOCUS_MODE',
-          enabled: checked 
+          type: 'REMOVE_MAKSAD'
         }, resolve);
       });
 
+      if (response?.success) {
+        setStatus('Filter removed successfully!');
+        setStatusType('success');
+        setMaksad('');
+      } else {
+        setStatus(response?.error || 'Error removing filter. Please refresh the page and try again.');
+        setStatusType('error');
+      }
+      setShowStatus(true);
+    } catch (err) {
+      console.error('Error:', err);
+      setStatus('Error removing filter. Please refresh the page and try again.');
+      setStatusType('error');
+      setShowStatus(true);
+    }
+  };
+
+  const toggleFocusMode = async (checked: boolean) => {
+    try {
+      console.log("Toggling focus mode:", checked);
+      
+      // Check if maksad is provided when enabling focus mode
+      if (checked && !maksad.trim()) {
+        setStatus('Please enter your maksad to enable focus mode');
+        setStatusType('error');
+        setShowStatus(true);
+        return; // Don't update the UI state if validation fails
+      }
+      
+      // Update UI state only after validation passes
+      setFocusMode(checked);
+      
+      // Store focus mode in chrome storage immediately
+      await new Promise<void>((resolve) => {
+        chrome.storage.local.set({ focusMode: checked }, resolve);
+      });
+
+      // Send message to toggle focus mode in content script
+      const response = await new Promise<MessageResponse>((resolve) => {
+        chrome.runtime.sendMessage({ 
+          type: 'TOGGLE_FOCUS_MODE',
+          enabled: checked 
+        }, (response) => {
+          console.log("Focus mode toggle response:", response);
+          resolve(response || { success: false, error: 'No response' });
+        });
+      });
+
+      // Handle filter based on focus mode
+      if (checked && maksad) {
+        await applyContentFilter();
+      } else if (!checked) {
+        await removeContentFilter();
+      }
+
       if (!response?.success) {
+        console.error("Focus mode toggle failed:", response?.error);
         setStatus(response?.error || 'Error toggling focus mode. Please refresh the page and try again.');
         setStatusType('error');
         setShowStatus(true);
-        setFocusMode(!checked); // Revert the switch
       } else {
         setStatus(checked ? 'Focus mode enabled' : 'Focus mode disabled');
         setStatusType('success');
         setShowStatus(true);
       }
     } catch (err) {
-      console.error('Error:', err);
+      console.error('Error toggling focus mode:', err);
       setStatus('Error toggling focus mode. Please refresh the page and try again.');
       setStatusType('error');
       setShowStatus(true);
-      setFocusMode(!checked); // Revert the switch
+      // Reset UI state on error
+      setFocusMode(!checked);
     }
   };
 
@@ -185,17 +194,6 @@ const PopupApp: React.FC = () => {
             onChange={handleMaksadChange}
             className="flex-1"
           />
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={startListening}
-            className={cn(
-              "transition-colors duration-200",
-              isListening ? "text-destructive animate-pulse" : "hover:text-primary"
-            )}
-          >
-            <Mic className="h-4 w-4" />
-          </Button>
         </div>
 
         {showStatus && (
@@ -218,21 +216,20 @@ const PopupApp: React.FC = () => {
           <Target className="h-4 w-4 text-primary" />
           <span className="text-sm font-medium">Focus Mode</span>
         </div>
-        <Switch
-          checked={focusMode}
-          onCheckedChange={toggleFocusMode}
-        />
+        <Button
+          variant={focusMode ? "default" : "outline"}
+          size="sm"
+          onClick={() => toggleFocusMode(!focusMode)}
+          className={cn(
+            "transition-all",
+            focusMode && "bg-primary text-primary-foreground"
+          )}
+        >
+          {focusMode ? "Enabled" : "Disabled"}
+        </Button>
       </div>
-
-      <Button
-        onClick={applyContentFilter}
-        className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
-      >
-        <Ban className="h-4 w-4 mr-2" />
-        Apply Filter
-      </Button>
     </div>
   );
 };
 
-export default PopupApp; 
+export default PopupApp;

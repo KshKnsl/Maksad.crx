@@ -4,7 +4,7 @@ interface MessageResponse {
 }
 
 interface ExtensionMessage {
-  type: 'UPDATE_MAKSAD' | 'TOGGLE_FOCUS_MODE';
+  type: 'UPDATE_MAKSAD' | 'REMOVE_MAKSAD' | 'TOGGLE_FOCUS_MODE';
   maksad?: string;
   enabled?: boolean;
 }
@@ -38,6 +38,16 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         target: { tabId },
         files: ['styles.css']
       });
+      
+      // Apply focus mode if it's enabled
+      chrome.storage.local.get(['focusMode'], (result) => {
+        if (result.focusMode) {
+          chrome.tabs.sendMessage(tabId, { 
+            type: 'TOGGLE_FOCUS_MODE', 
+            enabled: true 
+          });
+        }
+      });
     } catch (error) {
       console.error('Injection error:', error);
     }
@@ -47,16 +57,24 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 // Handle messages from popup to content script
 chrome.runtime.onMessage.addListener((
   message: ExtensionMessage,
-  _sender,
+  _sender, // Renamed to _sender to indicate it's not used
   sendResponse: (response: MessageResponse) => void
 ) => {
-  if (message.type === 'UPDATE_MAKSAD' || message.type === 'TOGGLE_FOCUS_MODE') {
+  console.log("Background received message:", message);
+  
+  if (message.type === 'UPDATE_MAKSAD' || message.type === 'REMOVE_MAKSAD' || message.type === 'TOGGLE_FOCUS_MODE') {
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
       const activeTab = tabs[0];
       if (activeTab?.id && activeTab.url && isInjectableUrl(activeTab.url)) {
         try {
-          await chrome.tabs.sendMessage(activeTab.id, message);
-          sendResponse({ success: true });
+          chrome.tabs.sendMessage(activeTab.id, message, (response) => {
+            if (chrome.runtime.lastError) {
+              console.error('Error sending message to tab:', chrome.runtime.lastError);
+              sendResponse({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+              sendResponse(response || { success: true });
+            }
+          });
         } catch (error) {
           const err = error as Error;
           console.error('Failed to send message to content script:', err);
@@ -69,4 +87,4 @@ chrome.runtime.onMessage.addListener((
     return true; // Keep the message channel open for async response
   }
   return false;
-}); 
+});
