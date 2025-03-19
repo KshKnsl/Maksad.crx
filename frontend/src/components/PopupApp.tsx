@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Target, CheckCircle2, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, KeyboardEvent } from 'react';
+import { Target, CheckCircle2, AlertCircle, X, Plus } from 'lucide-react';
 import { Input } from './ui/input';
-import { Button } from './ui/button'; // Add this import
+import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 
 declare global {
@@ -15,7 +15,8 @@ interface MessageResponse {
 }
 
 const PopupApp: React.FC = () => {
-  const [maksad, setMaksad] = useState<string>('');
+  const [currentInput, setCurrentInput] = useState<string>('');
+  const [maksadList, setMaksadList] = useState<string[]>([]);
   const [status, setStatus] = useState<string>('Enter your maksad (aim)');
   const [focusMode, setFocusMode] = useState<boolean>(false);
   const [showStatus, setShowStatus] = useState<boolean>(false);
@@ -37,12 +38,14 @@ const PopupApp: React.FC = () => {
     });
 
     // Load saved maksad
-    chrome.storage.local.get(['maksad', 'focusMode'], (result) => {
-      if (result.maksad) {
-        setMaksad(result.maksad);
-        setStatus('Your current maksad');
-        setStatusType('success');
-        setShowStatus(true);
+    chrome.storage.local.get(['maksadList', 'focusMode'], (result) => {
+      if (result.maksadList && Array.isArray(result.maksadList)) {
+        setMaksadList(result.maksadList);
+        if (result.maksadList.length > 0) {
+          setStatus('Your current maksad keywords');
+          setStatusType('success');
+          setShowStatus(true);
+        }
       }
       if (result.focusMode !== undefined) {
         setFocusMode(result.focusMode);
@@ -50,23 +53,52 @@ const PopupApp: React.FC = () => {
     });
   }, []);
 
-  const handleMaksadChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setMaksad(event.target.value);
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setCurrentInput(event.target.value);
     setShowStatus(false);
+  };
+
+  const addKeyword = () => {
+    if (currentInput.trim() && !maksadList.includes(currentInput.trim())) {
+      setMaksadList([...maksadList, currentInput.trim()]);
+      setCurrentInput('');
+      setShowStatus(false);
+    } else if (currentInput.trim() && maksadList.includes(currentInput.trim())) {
+      setStatus('This keyword already exists');
+      setStatusType('error');
+      setShowStatus(true);
+    }
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      addKeyword();
+    }
+  };
+
+  const removeKeyword = (keyword: string) => {
+    setMaksadList(maksadList.filter(k => k !== keyword));
   };
 
   const applyContentFilter = async () => {
     try {
-      // Store maksad in chrome storage
+      if (maksadList.length === 0) {
+        setStatus('Please add at least one keyword');
+        setStatusType('error');
+        setShowStatus(true);
+        return;
+      }
+
+      // Store maksad list in chrome storage
       await new Promise<void>((resolve) => {
-        chrome.storage.local.set({ maksad }, resolve);
+        chrome.storage.local.set({ maksadList }, resolve);
       });
 
       // Send message to background script
       const response = await new Promise<MessageResponse>((resolve) => {
         chrome.runtime.sendMessage({ 
           type: 'UPDATE_MAKSAD',
-          maksad 
+          maksadList 
         }, resolve);
       });
 
@@ -90,7 +122,7 @@ const PopupApp: React.FC = () => {
     try {
       // Remove maksad from chrome storage
       await new Promise<void>((resolve) => {
-        chrome.storage.local.remove('maksad', resolve);
+        chrome.storage.local.remove('maksadList', resolve);
       });
 
       // Send message to background script
@@ -103,7 +135,7 @@ const PopupApp: React.FC = () => {
       if (response?.success) {
         setStatus('Filter removed successfully!');
         setStatusType('success');
-        setMaksad('');
+        setMaksadList([]);
       } else {
         setStatus(response?.error || 'Error removing filter. Please refresh the page and try again.');
         setStatusType('error');
@@ -122,8 +154,8 @@ const PopupApp: React.FC = () => {
       console.log("Toggling focus mode:", checked);
       
       // Check if maksad is provided when enabling focus mode
-      if (checked && !maksad.trim()) {
-        setStatus('Please enter your maksad to enable focus mode');
+      if (checked && maksadList.length === 0) {
+        setStatus('Please add at least one keyword to enable focus mode');
         setStatusType('error');
         setShowStatus(true);
         return; // Don't update the UI state if validation fails
@@ -149,7 +181,7 @@ const PopupApp: React.FC = () => {
       });
 
       // Handle filter based on focus mode
-      if (checked && maksad) {
+      if (checked && maksadList.length > 0) {
         await applyContentFilter();
       } else if (!checked) {
         await removeContentFilter();
@@ -189,12 +221,40 @@ const PopupApp: React.FC = () => {
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
           <Input
-            placeholder="Enter your maksad (aim)"
-            value={maksad}
-            onChange={handleMaksadChange}
+            placeholder="Add a keyword..."
+            value={currentInput}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
             className="flex-1"
           />
+          <Button 
+            variant="outline" 
+            size="icon" 
+            onClick={addKeyword}
+            disabled={!currentInput.trim()}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
         </div>
+
+        {maksadList.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-2">
+            {maksadList.map((keyword, index) => (
+              <div 
+                key={index} 
+                className="flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-full text-sm"
+              >
+                <span>{keyword}</span>
+                <button 
+                  onClick={() => removeKeyword(keyword)} 
+                  className="h-4 w-4 rounded-full flex items-center justify-center hover:bg-primary/20"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {showStatus && (
           <div className={cn(

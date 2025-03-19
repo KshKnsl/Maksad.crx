@@ -5,7 +5,7 @@ interface MessageResponse {
 
 interface ExtensionMessage {
   type: 'UPDATE_MAKSAD' | 'REMOVE_MAKSAD' | 'TOGGLE_FOCUS_MODE';
-  maksad?: string;
+  maksadList?: string[];
   enabled?: boolean;
 }
 
@@ -39,12 +39,19 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         files: ['styles.css']
       });
       
-      // Apply focus mode if it's enabled
-      chrome.storage.local.get(['focusMode'], (result) => {
+      // Apply focus mode and maksad list if they're stored
+      chrome.storage.local.get(['focusMode', 'maksadList'], (result) => {
         if (result.focusMode) {
           chrome.tabs.sendMessage(tabId, { 
             type: 'TOGGLE_FOCUS_MODE', 
             enabled: true 
+          });
+        }
+        
+        if (result.maksadList && Array.isArray(result.maksadList) && result.maksadList.length > 0) {
+          chrome.tabs.sendMessage(tabId, {
+            type: 'UPDATE_MAKSAD',
+            maksadList: result.maksadList
           });
         }
       });

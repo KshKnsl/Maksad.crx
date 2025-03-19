@@ -1,17 +1,17 @@
 interface Message {
   type: string;
-  maksad?: string;
+  maksadList?: string[];
   enabled?: boolean;
 }
 
-let currentMaksad = '';
+let currentMaksadList: string[] = [];
 let focusMode = false;
 
-// Load maksad and focus mode from storage when content script initializes
-chrome.storage.local.get(['maksad', 'focusMode'], (result) => {
+// Load maksad list and focus mode from storage when content script initializes
+chrome.storage.local.get(['maksadList', 'focusMode'], (result) => {
   console.log("Loading from storage:", result);
-  if (result.maksad) {
-    currentMaksad = result.maksad;
+  if (result.maksadList && Array.isArray(result.maksadList)) {
+    currentMaksadList = result.maksadList;
   }
   
   if (result.focusMode) {
@@ -22,10 +22,14 @@ chrome.storage.local.get(['maksad', 'focusMode'], (result) => {
   hideDistractingElements();
 });
 
-// Function to check if text contains maksad
+// Function to check if text contains any of the maksad keywords
 const containsMaksad = (text: string): boolean => {
-  if (!currentMaksad) return true;
-  return text.toLowerCase().includes(currentMaksad.toLowerCase());
+  if (!currentMaksadList || currentMaksadList.length === 0) return true;
+  
+  const lowerText = text.toLowerCase();
+  return currentMaksadList.some(keyword => 
+    lowerText.includes(keyword.toLowerCase())
+  );
 };
 
 // Function to show a reminder tooltip
@@ -45,7 +49,12 @@ const showMaksadReminder = () => {
     max-width: 300px;
     animation: slideIn 0.3s ease-out;
   `;
-  reminder.textContent = `Remember your maksad: ${currentMaksad}`;
+  
+  const maksadText = currentMaksadList.length > 0 
+    ? `Remember your maksad: ${currentMaksadList.join(', ')}`
+    : 'Add some keywords to focus on your maksad';
+  
+  reminder.textContent = maksadText;
   document.body.appendChild(reminder);
 
   setTimeout(() => {
@@ -233,7 +242,7 @@ function toggleFocusMode(enabled: boolean) {
   focusMode = enabled;
   document.body.classList.toggle('focus-mode', enabled);
   
-  if (enabled && currentMaksad) {
+  if (enabled && currentMaksadList.length > 0) {
     showMaksadReminder();
   }
 }
@@ -242,10 +251,10 @@ function toggleFocusMode(enabled: boolean) {
 chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
   console.log("Content script received message:", message);
   
-  if (message.type === 'UPDATE_MAKSAD' && message.maksad) {
-    currentMaksad = message.maksad;
-    // Store maksad in chrome storage
-    chrome.storage.local.set({ maksad: message.maksad }, () => {
+  if (message.type === 'UPDATE_MAKSAD' && message.maksadList) {
+    currentMaksadList = message.maksadList;
+    // Store maksad list in chrome storage
+    chrome.storage.local.set({ maksadList: message.maksadList }, () => {
       hideDistractingElements();
       showMaksadReminder();
       sendResponse({ success: true });
@@ -253,9 +262,9 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
     return true; // Keep message channel open for async response
   } 
   else if (message.type === 'REMOVE_MAKSAD') {
-    currentMaksad = '';
-    // Remove maksad from chrome storage
-    chrome.storage.local.remove('maksad', () => {
+    currentMaksadList = [];
+    // Remove maksad list from chrome storage
+    chrome.storage.local.remove('maksadList', () => {
       removeDistractingElementsFilter();
       sendResponse({ success: true });
     });
@@ -282,7 +291,7 @@ hideDistractingElements();
 
 // Create observer to handle dynamically loaded content
 const observer = new MutationObserver(() => {
-  if (currentMaksad) {
+  if (currentMaksadList.length > 0) {
     hideDistractingElements();
   }
 });
