@@ -1,303 +1,99 @@
-interface Message {
-  type: string;
-  maksadList?: string[];
-  enabled?: boolean;
-}
-
 let currentMaksadList: string[] = [];
 let focusMode = false;
-
-// Load maksad list and focus mode from storage when content script initializes
-chrome.storage.local.get(['maksadList', 'focusMode'], (result) => {
-  console.log("Loading from storage:", result);
-  if (result.maksadList && Array.isArray(result.maksadList)) {
-    currentMaksadList = result.maksadList;
-  }
-  
-  if (result.focusMode) {
-    focusMode = result.focusMode;
-    toggleFocusMode(focusMode);
-  }
-  
+let blocklist: string[] = [];
+let allowThisSession = false;
+chrome.storage.local.get(['maksadList', 'focusMode', 'blocklist'], r => {
+  if (Array.isArray(r.maksadList)) currentMaksadList = r.maksadList;
+  if (r.focusMode) { focusMode = r.focusMode; toggleFocusMode(focusMode); }
+  if (Array.isArray(r.blocklist)) blocklist = r.blocklist;
+  checkAndBlockSite();
   hideDistractingElements();
 });
-
-// Function to check if text contains any of the maksad keywords
-const containsMaksad = (text: string): boolean => {
-  if (!currentMaksadList || currentMaksadList.length === 0) return true;
-  
-  const lowerText = text.toLowerCase();
-  return currentMaksadList.some(keyword => 
-    lowerText.includes(keyword.toLowerCase())
-  );
-};
-
-// Function to show a reminder tooltip
-const showMaksadReminder = () => {
-  const reminder = document.createElement('div');
-  reminder.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    padding: 15px;
-    background: #1976d2;
-    color: white;
-    border-radius: 8px;
-    z-index: 9999;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    font-family: Arial, sans-serif;
-    max-width: 300px;
-    animation: slideIn 0.3s ease-out;
-  `;
-  
-  const maksadText = currentMaksadList.length > 0 
-    ? `Remember your maksad: ${currentMaksadList.join(', ')}`
-    : 'Add some keywords to focus on your maksad';
-  
-  reminder.textContent = maksadText;
-  document.body.appendChild(reminder);
-
-  setTimeout(() => {
-    reminder.style.animation = 'fadeOut 0.3s ease-out';
-    setTimeout(() => reminder.remove(), 300);
-  }, 3000);
-};
-
-// Function to hide distracting elements
-const hideDistractingElements = () => {
-  // Hide YouTube Shorts
-  if (window.location.hostname.includes('youtube.com')) {
-    // Hide Shorts from sidebar
-    const shortsSidebar = document.querySelector('ytd-guide-section-renderer a[title="Shorts"]');
-    if (shortsSidebar) {
-      (shortsSidebar as HTMLElement).style.display = 'none';
-    }
-
-    // Hide statement banner
-    const statementBanner = document.querySelectorAll('ytd-statement-banner-renderer');
-    statementBanner.forEach((banner: Element) => {
-      (banner as HTMLElement).style.display = 'none';
-    });
-
-    // Hide Shorts from main feed
-    const shortsVideos = document.querySelectorAll('ytd-rich-item-renderer');
-    shortsVideos.forEach((video: Element) => {
-      const link = video.querySelector('a#thumbnail[href*="shorts"]');
-      if (link) {
-        (video as HTMLElement).style.display = 'none';
-      }
-    });
-
-    // Hide promoted videos
-    const promotedVideos = document.querySelectorAll('ytd-promoted-video-renderer');
-    promotedVideos.forEach((video: Element) => {
-      (video as HTMLElement).style.display = 'none';
-    });
-
-    // Hide reels shelf
-    const reelsShelf = document.querySelectorAll('ytd-reel-shelf-renderer');
-    reelsShelf.forEach((shelf: Element) => {
-      (shelf as HTMLElement).style.display = 'none';
-    });
-
-    // Hide empty sections and dividers
-    const emptyElements = document.querySelectorAll(`
-      ytd-horizontal-card-list-renderer:empty,
-      ytd-item-section-renderer:empty,
-      ytd-shelf-renderer:empty,
-      .ytd-rich-section-renderer:empty,
-      ytd-video-renderer:empty,
-      ytd-rich-grid-row:empty,
-      ytd-rich-shelf-renderer:empty
-    `);
-    emptyElements.forEach((element: Element) => {
-      (element as HTMLElement).style.display = 'none';
-    });
-
-    // Filter regular videos based on maksad
-    const videoTitles = document.querySelectorAll('ytd-video-renderer, ytd-rich-item-renderer');
-    videoTitles.forEach((video: Element) => {
-      const titleElement = video.querySelector('#video-title, .title');
-      if (titleElement) {
-        const title = titleElement.textContent || '';
-        if (!containsMaksad(title)) {
-          (video as HTMLElement).style.display = 'none';
-          // Also hide the parent shelf if all its videos are hidden
-          const parentShelf = video.closest('ytd-shelf-renderer, ytd-rich-shelf-renderer');
-          if (parentShelf) {
-            const visibleVideos = parentShelf.querySelectorAll('ytd-video-renderer[style*="display: block"], ytd-rich-item-renderer[style*="display: block"]');
-            if (visibleVideos.length === 0) {
-              (parentShelf as HTMLElement).style.display = 'none';
-            }
-          }
-        }
-      }
-    });
-
-    // Add focus mode button
-    if (!document.querySelector('#focus-mode-btn')) {
-      const focusBtn = document.createElement('button');
-      focusBtn.id = 'focus-mode-btn';
-      focusBtn.innerHTML = '🎯 Focus Mode';
-      focusBtn.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        padding: 10px 20px;
-        background: #1976d2;
-        color: white;
-        border: none;
-        border-radius: 20px;
-        cursor: pointer;
-        z-index: 9999;
-        font-weight: bold;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-      `;
-      focusBtn.onclick = () => {
-        document.body.classList.toggle('focus-mode');
-        showMaksadReminder();
-      };
-      document.body.appendChild(focusBtn);
-    }
-  }
-
-  // Hide social media feed items that don't contain maksad
-  const feedItems = document.querySelectorAll('article, [role="article"], .post, .tweet');
-  feedItems.forEach((item: Element) => {
-    const text = item.textContent || '';
-    if (!containsMaksad(text)) {
-      (item as HTMLElement).style.display = 'none';
-    }
-  });
-};
-
-// Function to remove distracting elements filter
-const removeDistractingElementsFilter = () => {
-  // Show YouTube Shorts
-  if (window.location.hostname.includes('youtube.com')) {
-    // Show Shorts from sidebar
-    const shortsSidebar = document.querySelector('ytd-guide-section-renderer a[title="Shorts"]');
-    if (shortsSidebar) {
-      (shortsSidebar as HTMLElement).style.display = '';
-    }
-
-    // Show statement banner
-    const statementBanner = document.querySelectorAll('ytd-statement-banner-renderer');
-    statementBanner.forEach((banner: Element) => {
-      (banner as HTMLElement).style.display = '';
-    });
-
-    // Show Shorts from main feed
-    const shortsVideos = document.querySelectorAll('ytd-rich-item-renderer');
-    shortsVideos.forEach((video: Element) => {
-      const link = video.querySelector('a#thumbnail[href*="shorts"]');
-      if (link) {
-        (video as HTMLElement).style.display = '';
-      }
-    });
-
-    // Show promoted videos
-    const promotedVideos = document.querySelectorAll('ytd-promoted-video-renderer');
-    promotedVideos.forEach((video: Element) => {
-      (video as HTMLElement).style.display = '';
-    });
-
-    // Show reels shelf
-    const reelsShelf = document.querySelectorAll('ytd-reel-shelf-renderer');
-    reelsShelf.forEach((shelf: Element) => {
-      (shelf as HTMLElement).style.display = '';
-    });
-
-    // Show empty sections and dividers
-    const emptyElements = document.querySelectorAll(`
-      ytd-horizontal-card-list-renderer:empty,
-      ytd-item-section-renderer:empty,
-      ytd-shelf-renderer:empty,
-      .ytd-rich-section-renderer:empty,
-      ytd-video-renderer:empty,
-      ytd-rich-grid-row:empty,
-      ytd-rich-shelf-renderer:empty
-    `);
-    emptyElements.forEach((element: Element) => {
-      (element as HTMLElement).style.display = '';
-    });
-
-    // Show regular videos
-    const videoTitles = document.querySelectorAll('ytd-video-renderer, ytd-rich-item-renderer');
-    videoTitles.forEach((video: Element) => {
-      (video as HTMLElement).style.display = '';
-    });
-  }
-
-  // Show social media feed items
-  const feedItems = document.querySelectorAll('article, [role="article"], .post, .tweet');
-  feedItems.forEach((item: Element) => {
-    (item as HTMLElement).style.display = '';
-  });
-};
-
-// Function to toggle focus mode
-function toggleFocusMode(enabled: boolean) {
-  console.log("Content script: toggling focus mode to", enabled);
-  focusMode = enabled;
-  document.body.classList.toggle('focus-mode', enabled);
-  
-  if (enabled && currentMaksadList.length > 0) {
-    showMaksadReminder();
-  }
+function getDomain(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return window.location.hostname.replace(/^www\./, ''); }
 }
-
-// Listen for messages from popup
-chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
-  console.log("Content script received message:", message);
-  
+function showBlockOverlay(domain: string) {
+  if (document.getElementById('maksad-block-overlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'maksad-block-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:#000;color:#fff;z-index:999999;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:1.5rem;font-family:Arial,sans-serif;';
+  overlay.innerHTML = `<div style="margin-bottom:2rem;">This site (<b>${domain}</b>) is blocked by Maksad Nahi Bhulna Dunga</div><button id="allow-this-time-btn" style="padding:0.75rem 2rem;font-size:1.1rem;background:#222;color:#fff;border:2px solid #fff;border-radius:8px;cursor:pointer;">Allow this time</button>`;
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+  document.getElementById('allow-this-time-btn')?.addEventListener('click', () => { allowThisSession = true; overlay.remove(); document.body.style.overflow = ''; });
+}
+function checkAndBlockSite() {
+  if (allowThisSession) return;
+  const domain = getDomain(window.location.href);
+  if (blocklist.some(b => domain === b || domain.endsWith('.' + b))) showBlockOverlay(domain);
+}
+const containsMaksad = (text: string) => !currentMaksadList.length ? true : currentMaksadList.some(k => (text || '').toLowerCase().includes(k.toLowerCase()));
+const showMaksadReminder = () => {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;top:20px;right:20px;padding:15px;background:#1976d2;color:white;border-radius:8px;z-index:9999;box-shadow:0 2px 5px rgba(0,0,0,0.2);font-family:Arial,sans-serif;max-width:300px;animation:slideIn 0.3s ease-out;';
+  d.textContent = currentMaksadList.length ? `Remember your maksad: ${currentMaksadList.join(', ')}` : 'Add some keywords to focus on your maksad';
+  document.body.appendChild(d);
+  setTimeout(() => { d.style.animation = 'fadeOut 0.3s ease-out'; setTimeout(() => d.remove(), 300); }, 3000);
+};
+const hideDistractingElements = () => {
+  if (window.location.hostname.includes('youtube.com')) {
+    const shortsSidebar = document.querySelector('ytd-guide-section-renderer a[title="Shorts"]') as HTMLElement | null;
+    if (shortsSidebar) shortsSidebar.style.display = 'none';
+    document.querySelectorAll('ytd-statement-banner-renderer').forEach(e => (e as HTMLElement).style.display = 'none');
+    document.querySelectorAll('ytd-rich-item-renderer').forEach(v => { const l = v.querySelector('a#thumbnail[href*="shorts"]'); if (l) (v as HTMLElement).style.display = 'none'; });
+    document.querySelectorAll('ytd-promoted-video-renderer').forEach(v => (v as HTMLElement).style.display = 'none');
+    document.querySelectorAll('ytd-reel-shelf-renderer').forEach(s => (s as HTMLElement).style.display = 'none');
+    document.querySelectorAll('ytd-horizontal-card-list-renderer:empty,ytd-item-section-renderer:empty,ytd-shelf-renderer:empty,.ytd-rich-section-renderer:empty,ytd-video-renderer:empty,ytd-rich-grid-row:empty,ytd-rich-shelf-renderer:empty').forEach(e => (e as HTMLElement).style.display = 'none');
+    document.querySelectorAll('ytd-video-renderer, ytd-rich-item-renderer').forEach(v => { const t = v.querySelector('#video-title, .title'); if (t && !containsMaksad((t.textContent || ''))) { (v as HTMLElement).style.display = 'none'; const p = v.closest('ytd-shelf-renderer, ytd-rich-shelf-renderer'); if (p) { const vis = p.querySelectorAll('ytd-video-renderer[style*="display: block"], ytd-rich-item-renderer[style*="display: block"]'); if (!vis.length) (p as HTMLElement).style.display = 'none'; } } });
+    if (!document.querySelector('#focus-mode-btn')) {
+      const btn = document.createElement('button');
+      btn.id = 'focus-mode-btn';
+      btn.innerHTML = '🎯 Focus Mode';
+      btn.style.cssText = 'position:fixed;bottom:20px;right:20px;padding:10px 20px;background:#1976d2;color:white;border:none;border-radius:20px;cursor:pointer;z-index:9999;font-weight:bold;box-shadow:0 2px 5px rgba(0,0,0,0.2);';
+      btn.onclick = () => { document.body.classList.toggle('focus-mode'); showMaksadReminder(); };
+      document.body.appendChild(btn);
+    }
+  }
+  document.querySelectorAll('article, [role="article"], .post, .tweet').forEach(i => { if (!containsMaksad((i.textContent || ''))) (i as HTMLElement).style.display = 'none'; });
+};
+const removeDistractingElementsFilter = () => {
+  if (window.location.hostname.includes('youtube.com')) {
+    const shortsSidebar = document.querySelector('ytd-guide-section-renderer a[title="Shorts"]') as HTMLElement | null;
+    if (shortsSidebar) shortsSidebar.style.display = '';
+    document.querySelectorAll('ytd-statement-banner-renderer').forEach(e => (e as HTMLElement).style.display = '');
+    document.querySelectorAll('ytd-rich-item-renderer').forEach(v => { const l = v.querySelector('a#thumbnail[href*="shorts"]'); if (l) (v as HTMLElement).style.display = ''; });
+    document.querySelectorAll('ytd-promoted-video-renderer').forEach(v => (v as HTMLElement).style.display = '');
+    document.querySelectorAll('ytd-reel-shelf-renderer').forEach(s => (s as HTMLElement).style.display = '');
+    document.querySelectorAll('ytd-horizontal-card-list-renderer:empty,ytd-item-section-renderer:empty,ytd-shelf-renderer:empty,.ytd-rich-section-renderer:empty,ytd-video-renderer:empty,ytd-rich-grid-row:empty,ytd-rich-shelf-renderer:empty').forEach(e => (e as HTMLElement).style.display = '');
+    document.querySelectorAll('ytd-video-renderer, ytd-rich-item-renderer').forEach(v => (v as HTMLElement).style.display = '');
+  }
+  document.querySelectorAll('article, [role="article"], .post, .tweet').forEach(i => (i as HTMLElement).style.display = '');
+};
+function toggleFocusMode(enabled: boolean | undefined) {
+  focusMode = enabled ?? false;
+  document.body.classList.toggle('focus-mode', focusMode);
+  if (focusMode && currentMaksadList.length) showMaksadReminder();
+}
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'UPDATE_MAKSAD' && message.maksadList) {
     currentMaksadList = message.maksadList;
-    // Store maksad list in chrome storage
-    chrome.storage.local.set({ maksadList: message.maksadList }, () => {
-      hideDistractingElements();
-      showMaksadReminder();
-      sendResponse({ success: true });
-    });
-    return true; // Keep message channel open for async response
-  } 
-  else if (message.type === 'REMOVE_MAKSAD') {
+    chrome.storage.local.set({ maksadList: message.maksadList }, () => { hideDistractingElements(); showMaksadReminder(); sendResponse({ success: true }); });
+    return true;
+  } else if (message.type === 'REMOVE_MAKSAD') {
     currentMaksadList = [];
-    // Remove maksad list from chrome storage
-    chrome.storage.local.remove('maksadList', () => {
-      removeDistractingElementsFilter();
-      sendResponse({ success: true });
-    });
-    return true; // Keep message channel open for async response
-  } 
-  else if (message.type === 'TOGGLE_FOCUS_MODE') {
-    try {
-      toggleFocusMode(!!message.enabled);
-      sendResponse({ success: true });
-    } catch (error) {
-      console.error("Error toggling focus mode:", error);
-      sendResponse({ success: false, error: String(error) });
-    }
-    return true; // Keep message channel open for async response
+    chrome.storage.local.remove('maksadList', () => { removeDistractingElementsFilter(); sendResponse({ success: true }); });
+    return true;
+  } else if (message.type === 'TOGGLE_FOCUS_MODE') {
+    try { toggleFocusMode(!!message.enabled); sendResponse({ success: true }); } catch (error) { sendResponse({ success: false, error: String(error) }); }
+    return true;
   }
-  
-  // Default response if message type is not recognized
   sendResponse({ success: false, error: 'Unknown message type' });
   return false;
 });
-
-// Run initial cleanup
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.blocklist) { blocklist = changes.blocklist.newValue || []; allowThisSession = false; checkAndBlockSite(); }
+});
+checkAndBlockSite();
 hideDistractingElements();
-
-// Create observer to handle dynamically loaded content
-const observer = new MutationObserver(() => {
-  if (currentMaksadList.length > 0) {
-    hideDistractingElements();
-  }
-});
-
-// Start observing
-observer.observe(document.body, {
-  childList: true,
-  subtree: true
-});
+const observer = new MutationObserver(() => { if (currentMaksadList.length) hideDistractingElements(); checkAndBlockSite(); });
+observer.observe(document.body, { childList: true, subtree: true });

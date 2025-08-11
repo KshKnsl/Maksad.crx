@@ -21,6 +21,8 @@ const PopupApp: React.FC = () => {
   const [focusMode, setFocusMode] = useState<boolean>(false);
   const [showStatus, setShowStatus] = useState<boolean>(false);
   const [statusType, setStatusType] = useState<'success' | 'error' | 'info'>('info');
+  const [blockInput, setBlockInput] = useState<string>('');
+  const [blocklist, setBlocklist] = useState<string[]>([]);
 
   // Check if current tab is supported
   useEffect(() => {
@@ -36,9 +38,7 @@ const PopupApp: React.FC = () => {
         }
       }
     });
-
-    // Load saved maksad
-    chrome.storage.local.get(['maksadList', 'focusMode'], (result) => {
+    chrome.storage.local.get(['maksadList', 'focusMode', 'blocklist'], (result) => {
       if (result.maksadList && Array.isArray(result.maksadList)) {
         setMaksadList(result.maksadList);
         if (result.maksadList.length > 0) {
@@ -50,34 +50,39 @@ const PopupApp: React.FC = () => {
       if (result.focusMode !== undefined) {
         setFocusMode(result.focusMode);
       }
+      if (result.blocklist && Array.isArray(result.blocklist)) {
+        setBlocklist(result.blocklist);
+      }
     });
   }, []);
 
-  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setCurrentInput(event.target.value);
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCurrentInput(e.target.value);
     setShowStatus(false);
   };
-
   const addKeyword = () => {
-    if (currentInput.trim() && !maksadList.includes(currentInput.trim())) {
-      setMaksadList([...maksadList, currentInput.trim()]);
-      setCurrentInput('');
-      setShowStatus(false);
-    } else if (currentInput.trim() && maksadList.includes(currentInput.trim())) {
-      setStatus('This keyword already exists');
-      setStatusType('error');
-      setShowStatus(true);
+    const val = currentInput.trim();
+    if (!val || maksadList.includes(val)) return setStatus('This keyword already exists'), setStatusType('error'), setShowStatus(true);
+    setMaksadList([...maksadList, val]);
+    setCurrentInput('');
+    setShowStatus(false);
+  };
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && addKeyword();
+  const removeKeyword = (keyword: string) => setMaksadList(maksadList.filter(k => k !== keyword));
+  const handleBlockInputChange = (event: React.ChangeEvent<HTMLInputElement>) => setBlockInput(event.target.value);
+  const addBlockedSite = () => {
+    const domain = blockInput.trim().toLowerCase();
+    if (domain && !blocklist.includes(domain)) {
+      const updated = [...blocklist, domain];
+      setBlocklist(updated);
+      setBlockInput('');
+      chrome.storage.local.set({ blocklist: updated });
     }
   };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      addKeyword();
-    }
-  };
-
-  const removeKeyword = (keyword: string) => {
-    setMaksadList(maksadList.filter(k => k !== keyword));
+  const removeBlockedSite = (domain: string) => {
+    const updated = blocklist.filter(d => d !== domain);
+    setBlocklist(updated);
+    chrome.storage.local.set({ blocklist: updated });
   };
 
   const applyContentFilter = async () => {
@@ -89,12 +94,10 @@ const PopupApp: React.FC = () => {
         return;
       }
 
-      // Store maksad list in chrome storage
       await new Promise<void>((resolve) => {
         chrome.storage.local.set({ maksadList }, resolve);
       });
 
-      // Send message to background script
       const response = await new Promise<MessageResponse>((resolve) => {
         chrome.runtime.sendMessage({ 
           type: 'UPDATE_MAKSAD',
@@ -120,12 +123,10 @@ const PopupApp: React.FC = () => {
 
   const removeContentFilter = async () => {
     try {
-      // Remove maksad from chrome storage
       await new Promise<void>((resolve) => {
         chrome.storage.local.remove('maksadList', resolve);
       });
 
-      // Send message to background script
       const response = await new Promise<MessageResponse>((resolve) => {
         chrome.runtime.sendMessage({ 
           type: 'REMOVE_MAKSAD'
@@ -161,15 +162,12 @@ const PopupApp: React.FC = () => {
         return; // Don't update the UI state if validation fails
       }
       
-      // Update UI state only after validation passes
       setFocusMode(checked);
       
-      // Store focus mode in chrome storage immediately
       await new Promise<void>((resolve) => {
         chrome.storage.local.set({ focusMode: checked }, resolve);
       });
 
-      // Send message to toggle focus mode in content script
       const response = await new Promise<MessageResponse>((resolve) => {
         chrome.runtime.sendMessage({ 
           type: 'TOGGLE_FOCUS_MODE',
@@ -180,7 +178,6 @@ const PopupApp: React.FC = () => {
         });
       });
 
-      // Handle filter based on focus mode
       if (checked && maksadList.length > 0) {
         await applyContentFilter();
       } else if (!checked) {
@@ -217,7 +214,8 @@ const PopupApp: React.FC = () => {
           Stay focused on your goals
         </p>
       </div>
-      
+
+      {/* Maksad keywords */}
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
           <Input
@@ -271,7 +269,41 @@ const PopupApp: React.FC = () => {
         )}
       </div>
 
-      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+      {/* Blocklist section */}
+      <div className="flex flex-col gap-2 mt-4">
+        <div className="font-semibold text-base">Website Blocklist</div>
+        <div className="flex items-center gap-2">
+          <Input
+            placeholder="Add domain (e.g. facebook.com)"
+            value={blockInput}
+            onChange={handleBlockInputChange}
+            className="flex-1"
+          />
+          <Button 
+            variant="outline" 
+            size="icon" 
+            onClick={addBlockedSite}
+            disabled={!blockInput.trim()}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
+        {blocklist.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-2">
+            {blocklist.map((domain, idx) => (
+              <div key={idx} className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-full text-sm dark:bg-red-900 dark:text-red-200">
+                <span>{domain}</span>
+                <button onClick={() => removeBlockedSite(domain)} className="h-4 w-4 rounded-full flex items-center justify-center hover:bg-red-200 dark:hover:bg-red-800">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Focus mode toggle */}
+      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 mt-4">
         <div className="flex items-center gap-2">
           <Target className="h-4 w-4 text-primary" />
           <span className="text-sm font-medium">Focus Mode</span>
